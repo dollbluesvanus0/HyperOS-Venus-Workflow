@@ -1,0 +1,68 @@
+name: HyperOS Port Pipeline
+on:
+  workflow_dispatch:
+    inputs:
+      donor_url:
+        description: 'URL донорской прошивки (ZIP)'
+        required: true
+      stock_url:
+        description: 'URL стоковой прошивки venus (ZIP)'
+        required: true
+      build_prop_extra:
+        description: 'Доп. пропы (опционально, формат: key=value\nkey2=value2)'
+        required: false
+        default: ''
+
+jobs:
+  port:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clean runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo apt-get clean
+          df -h
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            erofs-utils e2fsprogs android-tools-backup \
+            p7zip-full python3 curl jq unzip wget
+          # lpunpack/lpmake
+          curl -L -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/superimg/releases/latest/download/lptools_linux.tar.gz
+          tar -xzf /tmp/lptools.tar.gz -C /tmp/
+          sudo mv /tmp/lpunpack /tmp/lpmake /usr/local/bin/
+          sudo chmod +x /usr/local/bin/lpunpack /usr/local/bin/lpmake
+          # payload-dumper-go
+          curl -L -o /tmp/pdg.tar.gz https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go_1.2.2_linux_amd64.tar.gz
+          tar -xzf /tmp/pdg.tar.gz -C /tmp/
+          sudo mv /tmp/payload-dumper-go /usr/local/bin/
+
+      - name: Download ROMs
+        run: |
+          mkdir -p roms/{donor,stock}
+          curl -L -o roms/donor.zip "${{ github.event.inputs.donor_url }}"
+          curl -L -o roms/stock.zip "${{ github.event.inputs.stock_url }}"
+
+      - name: Extract & Unpack
+        run: bash scripts/01_extract.sh roms/donor roms/stock work
+
+      - name: Merge & Patch
+        run: |
+          bash scripts/02_merge_patch.sh work "${{ github.event.inputs.build_prop_extra }}"
+          df -h work
+
+      - name: Repack super.img
+        run: bash scripts/03_repack.sh work output
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HyperOS_Port_Venus
+          path: output/*
+          retention-days: 14
