@@ -32,27 +32,23 @@ jobs:
           sudo add-apt-repository -y universe
           sudo apt-get update
           sudo apt-get install -y \
-            erofs-utils e2fsprogs android-sdk-libsparse-utils \
+            erofs-utils e2fsprogs android-sdk-libsparse-utils android-sdk-platform-tools \
             p7zip-full python3 curl jq unzip wget liblz4-tool file
 
-          # lptools (lpunpack / lpmake)
-          curl -fsSL -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/superimg/releases/download/v1.0/lptools_linux.tar.gz
-          tar -xzf /tmp/lptools.tar.gz -C /tmp/
-          sudo mv /tmp/lpunpack /tmp/lpmake /usr/local/bin/
-          sudo chmod +x /usr/local/bin/lpunpack /usr/local/bin/lpmake
-
-          # payload-dumper-go
+          # payload-dumper-go (быстрая распаковка payload.bin)
           curl -fsSL -o /tmp/pdg.tar.gz https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go_1.2.2_linux_amd64.tar.gz
           tar -xzf /tmp/pdg.tar.gz -C /tmp/
           sudo mv /tmp/payload-dumper-go /usr/local/bin/
           sudo chmod +x /usr/local/bin/payload-dumper-go
 
           # Верификация
-          which simg2img && echo "✅ simg2img OK"
-          which lpunpack && echo "✅ lpunpack OK"
-          which lpmake && echo "✅ lpmake OK"
-          which payload-dumper-go && echo "✅ payload-dumper-go OK"
-          which mkfs.erofs && echo "✅ erofs-utils OK"
+          echo "🔍 Проверка инструментов:"
+          command -v simg2img && echo "✅ simg2img"
+          command -v lpunpack && echo "✅ lpunpack"
+          command -v lpmake && echo "✅ lpmake"
+          command -v payload-dumper-go && echo "✅ payload-dumper-go"
+          command -v mkfs.erofs && echo "✅ erofs-utils"
+          command -v dump.erofs && echo "✅ dump.erofs"
 
       - name: Download ROMs
         run: |
