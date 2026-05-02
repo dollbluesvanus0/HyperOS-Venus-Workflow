@@ -29,21 +29,33 @@ jobs:
 
       - name: Install tools
         run: |
+          # Включаем universe и обновляем кэш
+          sudo add-apt-repository -y universe
           sudo apt-get update
-          sudo apt-get install -y \
-            erofs-utils e2fsprogs android-tools \
-            p7zip-full python3 curl jq unzip wget
           
-          # lptools (lpunpack / lpmake)
-          curl -fsSL -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/superimg/releases/latest/download/lptools_linux.tar.gz
+          # Устанавливаем системные утилиты
+          sudo apt-get install -y \
+            erofs-utils e2fsprogs android-tools-fsutils \
+            p7zip-full python3 curl jq unzip wget liblz4-tool
+
+          # Загружаем lptools (lpunpack / lpmake)
+          curl -fsSL -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/superimg/releases/download/v1.0/lptools_linux.tar.gz
           tar -xzf /tmp/lptools.tar.gz -C /tmp/
           sudo mv /tmp/lpunpack /tmp/lpmake /usr/local/bin/
           sudo chmod +x /usr/local/bin/lpunpack /usr/local/bin/lpmake
-          
-          # payload-dumper-go
+
+          # Загружаем payload-dumper-go
           curl -fsSL -o /tmp/pdg.tar.gz https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go_1.2.2_linux_amd64.tar.gz
           tar -xzf /tmp/pdg.tar.gz -C /tmp/
           sudo mv /tmp/payload-dumper-go /usr/local/bin/
+          sudo chmod +x /usr/local/bin/payload-dumper-go
+
+          # Проверка установки
+          command -v simg2img && echo "✅ simg2img OK"
+          command -v lpunpack && echo "✅ lpunpack OK"
+          command -v lpmake && echo "✅ lpmake OK"
+          command -v payload-dumper-go && echo "✅ payload-dumper-go OK"
+          command -v mkfs.erofs && echo "✅ erofs OK"
 
       - name: Download ROMs
         run: |
