@@ -1,0 +1,99 @@
+name: HyperOS Porting Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      donor_url:
+        description: 'Ссылка на HyperOS (donor) ROM'
+        required: true
+      stock_url:
+        description: 'Ссылка на Stock ROM'
+        required: true
+  push:
+    paths:
+      - 'roms/donor.zip'
+      - 'roms/stock.zip'
+
+jobs:
+  port-hyperos:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          android-sdk-build-tools \
+          simg2img \
+          img2simg \
+          e2fsprogs \
+          debugfs \
+          zip \
+          unzip \
+          curl \
+          wget
+        
+        # Установка make_ext4fs (из состава android-sdk-utils или компиляция)
+        # Для Ubuntu обычно доступен пакет android-sdk-ext4-utils
+        sudo apt-get install -y android-sdk-ext4-utils || {
+          echo "make_ext4fs не найден в репозиториях, пробуем альтернативу..."
+          # Скачивание бинарника если нет в репо
+          wget -q https://raw.githubusercontent.com/akhilnarang/scripts/master/bin/make_ext4fs -O make_ext4fs
+          chmod +x make_ext4fs
+          sudo mv make_ext4fs /usr/local/bin/
+        }
+
+    - name: Download payload-dumper-go
+      run: |
+        wget -q https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go_linux_amd64 -O payload-dumper-go
+        chmod +x payload-dumper-go
+        sudo mv payload-dumper-go /usr/local/bin/
+
+    - name: Prepare ROMs
+      run: |
+        mkdir -p roms
+        
+        # Если триггер через workflow_dispatch с ссылками
+        if [ ! -z "${{ github.event.inputs.donor_url }}" ]; then
+          echo "Скачивание donor ROM..."
+          wget -q "${{ github.event.inputs.donor_url }}" -O roms/donor.zip
+        fi
+        
+        if [ ! -z "${{ github.event.inputs.stock_url }}" ]; then
+          echo "Скачивание stock ROM..."
+          wget -q "${{ github.event.inputs.stock_url }}" -O roms/stock.zip
+        fi
+        
+        # Проверка наличия файлов
+        ls -lh roms/
+
+    - name: Run Porting Script
+      run: |
+        chmod +x port_hyperos.sh
+        cd roms
+        ../port_hyperos.sh
+        
+    - name: Upload Result
+      uses: actions/upload-artifact@v4
+      with:
+        name: hyperos-port-result
+        path: output/super.img
+        retention-days: 7
+        
+    - name: Create Release (Optional)
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: output/super.img
+        tag_name: hyperos-port-${{ github.run_number }}
+        name: HyperOS Port Build #${{ github.run_number }}
+        body: |
+          Автоматическая сборка HyperOS Port
+          - Donor: ${{ github.event.inputs.donor_url }}
+          - Stock: ${{ github.event.inputs.stock_url }}
+          - Дата: ${{ github.event.created_at }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
