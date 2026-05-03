@@ -35,14 +35,24 @@ jobs:
             erofs-utils e2fsprogs android-sdk-libsparse-utils android-sdk-platform-tools \
             p7zip-full python3 curl jq unzip wget liblz4-tool file
 
-          # payload-dumper-go (быстрая распаковка payload.bin)
-          curl -fsSL -o /tmp/pdg.tar.gz https://github.com/ssut/payload-dumper-go/releases/latest/download/payload-dumper-go_1.2.2_linux_amd64.tar.gz
+          # Payload-dumper-go (автоматический поиск последней версии)
+          PDG_URL=$(curl -s https://api.github.com/repos/ssut/payload-dumper-go/releases/latest | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz")) | .browser_download_url')
+          if [ -z "$PDG_URL" ]; then echo "❌ PDG URL not found"; exit 1; fi
+          curl -fsSL -o /tmp/pdg.tar.gz "$PDG_URL"
           tar -xzf /tmp/pdg.tar.gz -C /tmp/
           sudo mv /tmp/payload-dumper-go /usr/local/bin/
           sudo chmod +x /usr/local/bin/payload-dumper-go
 
-          # Верификация
-          echo "🔍 Проверка инструментов:"
+          # Проверка наличия lpmake/lpunpack (иногда apt ставит старые версии)
+          if ! command -v lpmake &> /dev/null || ! command -v lpunpack &> /dev/null; then
+            echo "⚠️ lptools not in apt, downloading static binary..."
+            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/lptools/releases/download/v1.0/lptools_linux_amd64.tar.gz || \
+            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/aziz18x/android-tools/releases/download/v1.0/lptools_linux_amd64.tar.gz
+            tar -xzf /tmp/lptools.tar.gz -C /tmp/ 2>/dev/null || true
+            [ -f /tmp/lpmake ] && sudo mv /tmp/lpmake /tmp/lpunpack /usr/local/bin/
+          fi
+
+          echo "🔍 Финальная проверка:"
           command -v simg2img && echo "✅ simg2img"
           command -v lpunpack && echo "✅ lpunpack"
           command -v lpmake && echo "✅ lpmake"
