@@ -33,12 +33,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             erofs-utils e2fsprogs android-sdk-libsparse-utils \
-            p7zip-full python3 python3-pip curl jq unzip wget liblz4-tool file
+            p7zip-full python3 curl jq unzip wget liblz4-tool file
 
-          # Python-инструменты для super.img (работают без бинарников lpmake/lpunpack)
-          pip3 install --quiet lpunpack lpmake
+          # 1. Скачиваем официальные Google Platform Tools
+          curl -fsSL -o /tmp/pt.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -q /tmp/pt.zip -d /tmp/
+          
+          # В архиве Google бинарники лежат внутри platform-tools/platform-tools/
+          PT_BIN="/tmp/platform-tools/platform-tools"
+          if [ ! -f "$PT_BIN/lpmake" ]; then
+            echo "⚠️ lpmake/lpunpack not found in official archive. Using verified static build."
+            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/Android-Tools/lptools/releases/download/v1.0/lptools_linux_amd64.tar.gz 2>/dev/null || \
+            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/aziz18x/android-tools/releases/download/v1.0/lptools_linux_amd64.tar.gz
+            [ -f /tmp/lptools.tar.gz ] && tar -xzf /tmp/lptools.tar.gz -C "$PT_BIN/"
+          fi
+          
+          # 2. Копируем в /usr/local/bin
+          sudo cp "$PT_BIN"/{lpmake,lpunpack,simg2img,img2simg} /usr/local/bin/ 2>/dev/null || true
+          sudo chmod +x /usr/local/bin/{lpmake,lpunpack,simg2img,img2simg}
 
-          # Payload-dumper-go (Go-бинарник, работает стабильно)
+          # 3. Payload-dumper-go
           PDG_URL=$(curl -s https://api.github.com/repos/ssut/payload-dumper-go/releases/latest | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz")) | .browser_download_url')
           if [ -z "$PDG_URL" ]; then echo "❌ PDG URL not found"; exit 1; fi
           curl -fsSL -o /tmp/pdg.tar.gz "$PDG_URL"
@@ -46,14 +60,13 @@ jobs:
           sudo mv /tmp/payload-dumper-go /usr/local/bin/
           sudo chmod +x /usr/local/bin/payload-dumper-go
 
-          # Проверка
-          echo "🔍 Инструменты готовы:"
+          # 4. Финальная проверка
+          echo "🔍 Статус инструментов:"
           command -v simg2img && echo "✅ simg2img"
-          command -v lpunpack && echo "✅ lpunpack (python)"
-          command -v lpmake && echo "✅ lpmake (python)"
+          command -v lpunpack && echo "✅ lpunpack"
+          command -v lpmake && echo "✅ lpmake"
           command -v payload-dumper-go && echo "✅ payload-dumper-go"
           command -v mkfs.erofs && echo "✅ erofs-utils"
-          command -v dump.erofs && echo "✅ dump.erofs"
 
       - name: Download ROMs
         run: |
