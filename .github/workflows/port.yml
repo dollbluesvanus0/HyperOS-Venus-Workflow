@@ -32,10 +32,16 @@ jobs:
           sudo add-apt-repository -y universe
           sudo apt-get update
           sudo apt-get install -y \
-            erofs-utils e2fsprogs android-sdk-libsparse-utils android-sdk-platform-tools \
+            erofs-utils e2fsprogs android-sdk-libsparse-utils \
             p7zip-full python3 curl jq unzip wget liblz4-tool file
 
-          # Payload-dumper-go (автоматический поиск последней версии)
+          # lpmake / lpunpack (официальные бинарники Google, 100% стабильно)
+          curl -fsSL -o /tmp/platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -q /tmp/platform-tools.zip -d /tmp/
+          sudo mv /tmp/platform-tools/lpmake /tmp/platform-tools/lpunpack /usr/local/bin/
+          sudo chmod +x /usr/local/bin/lpmake /usr/local/bin/lpunpack
+
+          # payload-dumper-go (динамический поиск последней версии)
           PDG_URL=$(curl -s https://api.github.com/repos/ssut/payload-dumper-go/releases/latest | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz")) | .browser_download_url')
           if [ -z "$PDG_URL" ]; then echo "❌ PDG URL not found"; exit 1; fi
           curl -fsSL -o /tmp/pdg.tar.gz "$PDG_URL"
@@ -43,22 +49,12 @@ jobs:
           sudo mv /tmp/payload-dumper-go /usr/local/bin/
           sudo chmod +x /usr/local/bin/payload-dumper-go
 
-          # Проверка наличия lpmake/lpunpack (иногда apt ставит старые версии)
-          if ! command -v lpmake &> /dev/null || ! command -v lpunpack &> /dev/null; then
-            echo "⚠️ lptools not in apt, downloading static binary..."
-            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/lptools/releases/download/v1.0/lptools_linux_amd64.tar.gz || \
-            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/aziz18x/android-tools/releases/download/v1.0/lptools_linux_amd64.tar.gz
-            tar -xzf /tmp/lptools.tar.gz -C /tmp/ 2>/dev/null || true
-            [ -f /tmp/lpmake ] && sudo mv /tmp/lpmake /tmp/lpunpack /usr/local/bin/
-          fi
-
           echo "🔍 Финальная проверка:"
           command -v simg2img && echo "✅ simg2img"
           command -v lpunpack && echo "✅ lpunpack"
           command -v lpmake && echo "✅ lpmake"
           command -v payload-dumper-go && echo "✅ payload-dumper-go"
           command -v mkfs.erofs && echo "✅ erofs-utils"
-          command -v dump.erofs && echo "✅ dump.erofs"
 
       - name: Download ROMs
         run: |
