@@ -1,29 +1,112 @@
-- name: Install RomTools
+name: HyperOS Port via RomTools
+on:
+  workflow_dispatch:
+    inputs:
+      donor_url:
+        description: 'URL донорской прошивки (ZIP)'
+        required: true
+      stock_url:
+        description: 'URL стоковой прошивки venus (ZIP)'
+        required: true
+      density:
+        description: 'LCD density (ppi)'
+        required: false
+        default: '560'
+      extra_props:
+        description: 'Доп. пропы (key=value, каждый с новой строки)'
+        required: false
+        default: ''
+
+jobs:
+  port:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    env:
+      ROM_WORKDIR: ${{ github.workspace }}/romwork
+      PROJECT_NAME: venus_port
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clean runner disk
         run: |
-          # Клонируем RomTools
-          git clone --depth 1 https://github.com/Danda420/RomTools.git /tmp/RomTools
-          cd /tmp/RomTools
-          
-          # Устанавливаем зависимости (если есть скрипт установки)
-          if [ -f "install.sh" ]; then
-            bash install.sh
-          fi
-          
-          # Добавляем в PATH
-          echo "/tmp/RomTools" >> $GITHUB_PATH
-          echo "/tmp/RomTools/bin" >> $GITHUB_PATH
-          
-          # Проверяем наличие инструментов
-          echo "🔍 RomTools установлен. Проверка инструментов:"
-          command -v unpack_payload && echo "✅ unpack_payload"
-          command -v extract_super && echo "✅ extract_super"
-          command -v repack_super && echo "✅ repack_super"
-          command -v unpack_boot && echo "✅ unpack_boot"
-          command -v repack_boot && echo "✅ repack_boot"
-          command -v erofs_pack && echo "✅ erofs_pack"
-          command -v erofs_unpack && echo "✅ erofs_unpack"
-          
-          # Если RomTools использует другие имена команд, покажем что есть
-          echo "📦 Доступные утилиты в RomTools:"
-          ls -1 /tmp/RomTools/ 2>/dev/null || true
-          ls -1 /tmp/RomTools/bin/ 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo apt-get clean
+          df -h
+
+      - name: Clone RomTools
+        run: |
+          git clone --depth 1 https://github.com/Danda420/RomTools.git "$HOME/RomTools"
+          cd "$HOME/RomTools"
+          # Неинтерактивная установка зависимостей под Ubuntu/Debian
+          bash start --install-deps 2>/dev/null || true
+          # Если флаг не поддерживается — устанавливаем вручную то, что нужно
+          sudo apt-get update
+          sudo apt-get install -y \
+            erofs-utils e2fsprogs android-sdk-libsparse-utils \
+            p7zip-full python3 curl jq unzip wget liblz4-tool file \
+            zstd liblzo2-2 lz4
+          # Делаем romtools доступным глобально          echo "$HOME/RomTools" >> $GITHUB_PATH
+          echo "$HOME/RomTools/tool" >> $GITHUB_PATH
+
+      - name: Download ROMs
+        run: |
+          mkdir -p "$ROM_WORKDIR/input"
+          curl -fsSL -o "$ROM_WORKDIR/input/donor.zip" "${{ github.event.inputs.donor_url }}"
+          curl -fsSL -o "$ROM_WORKDIR/input/stock.zip" "${{ github.event.inputs.stock_url }}"
+
+      - name: Create RomTools project
+        run: |
+          mkdir -p "$ROM_WORKDIR/projects/$PROJECT_NAME"
+          # RomTools использует папки: input/, output/, projects/<name>/
+          ln -sf "$ROM_WORKDIR/input" "$HOME/RomTools/input"
+          ln -sf "$ROM_WORKDIR/output" "$HOME/RomTools/output"
+          ln -sf "$ROM_WORKDIR/projects/$PROJECT_NAME" "$HOME/RomTools/projects/$PROJECT_NAME"
+
+      - name: Unpack donor & stock via RomTools
+        run: |
+          cd "$HOME/RomTools"
+          # Распаковка donor.zip (payload.bin или super.img)
+          romtools unpack -f "$ROM_WORKDIR/input/donor.zip" -t donor -o "$ROM_WORKDIR/projects/$PROJECT_NAME/donor"
+          # Распаковка stock.zip
+          romtools unpack -f "$ROM_WORKDIR/input/stock.zip" -t stock -o "$ROM_WORKDIR/projects/$PROJECT_NAME/stock"
+          echo "✅ Unpacked via RomTools"
+          ls -la "$ROM_WORKDIR/projects/$PROJECT_NAME/"
+
+      - name: Merge & Patch (твой логический флоу)
+        run: |
+          bash scripts/rom_merge.sh \
+            "$ROM_WORKDIR/projects/$PROJECT_NAME" \
+            "${{ github.event.inputs.density }}" \
+            "${{ github.event.inputs.extra_props }}"
+
+      - name: Repack via RomTools
+        run: |
+          cd "$HOME/RomTools"
+          # Repack product, system_ext в erofs
+          romtools repack -s erofs -i "$ROM_WORKDIR/projects/$PROJECT_NAME/donor/product" -o "$ROM_WORKDIR/output/product.img"
+          romtools repack -s erofs -i "$ROM_WORKDIR/projects/$PROJECT_NAME/donor/system_ext" -o "$ROM_WORKDIR/output/system_ext.img"
+          # Vendor берём со стока без изменений
+          cp "$ROM_WORKDIR/projects/$PROJECT_NAME/stock/vendor/vendor.img" "$ROM_WORKDIR/output/vendor.img"
+          # Сборка super.img (RomTools умеет lpmake)
+          romtools super -c \
+            --metadata-size 65536 \
+            --super-name super \
+            --metadata-slots 2 \
+            --device super:9126805504 \
+            --group main:9126805504 \
+            --partition system_ext:readonly:0:main \            --image system_ext="$ROM_WORKDIR/output/system_ext.img" \
+            --partition product:readonly:0:0:main \
+            --image product="$ROM_WORKDIR/output/product.img" \
+            --partition vendor:readonly:0:main \
+            --image vendor="$ROM_WORKDIR/output/vendor.img" \
+            --output "$ROM_WORKDIR/output/super.img"
+          echo "✅ super.img created"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HyperOS_Port_Venus
+          path: ${{ env.ROM_WORKDIR }}/output/*
+          retention-days: 14
