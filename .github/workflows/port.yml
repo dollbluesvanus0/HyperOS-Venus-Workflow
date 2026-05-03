@@ -27,41 +27,33 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Install Android Kitchen Tools
+      - name: Install tools
         run: |
-          # 1. Скачиваем AIK-Linux (основа для boot/recovery/ext4/erofs)
-          git clone --depth 1 https://github.com/osm0sis/Android-Image-Kitchen.git /tmp/aik
-          
-          # 2. Скачиваем lptools (lpunpack/lpmake) из официального зеркала Google
-          # В platform-tools v34+ они лежат в корне, но иногда переименованы
-          curl -fsSL -o /tmp/pt.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-          unzip -q /tmp/pt.zip -d /tmp/pt
-          
-          # 3. Проверяем наличие lpmake/lpunpack, если нет → берём статические бинарники
-          if [ ! -f /tmp/pt/platform-tools/lpmake ]; then
-            echo "⚠️ lpmake not in platform-tools, using static build"
-            curl -fsSL -o /tmp/lptools.tar.gz https://github.com/erfanoabdi/superimg/releases/download/v1.0/lptools_linux.tar.gz 2>/dev/null || \
-            curl -fsSL -o /tmp/lptools.tar.gz https://raw.githubusercontent.com/Android-Tools/lptools/main/lptools_linux.tar.gz 2>/dev/null || { echo "❌ lptools unavailable"; exit 1; }
-            tar -xzf /tmp/lptools.tar.gz -C /tmp/pt/platform-tools/
-          fi
-          
-          # 4. Собираем все инструменты в одну папку kitchen/tools
-          mkdir -p /tmp/kitchen/tools
-          cp /tmp/pt/platform-tools/{lpmake,lpunpack,simg2img,img2simg,adb,fastboot} /tmp/kitchen/tools/
-          cp /tmp/aik/{unpackimg.sh,repackimg.sh,cleanup.sh,tools/*} /tmp/kitchen/
-          chmod +x /tmp/kitchen/tools/* /tmp/kitchen/*.sh
-          
-          # 5. Добавляем в PATH
-          echo "/tmp/kitchen/tools" >> $GITHUB_PATH
-          echo "/tmp/kitchen" >> $GITHUB_PATH
-          
-          # 6. Проверка
-          echo "🔍 Kitchen tools ready:"
-          command -v lpmake && echo "✅ lpmake"
-          command -v lpunpack && echo "✅ lpunpack"
+          sudo add-apt-repository -y universe
+          sudo apt-get update
+          sudo apt-get install -y \
+            erofs-utils e2fsprogs android-sdk-libsparse-utils \
+            p7zip-full python3 python3-pip curl jq unzip wget liblz4-tool file
+
+          # Python-инструменты для super.img (работают без бинарников lpmake/lpunpack)
+          pip3 install --quiet lpunpack lpmake
+
+          # Payload-dumper-go (Go-бинарник, работает стабильно)
+          PDG_URL=$(curl -s https://api.github.com/repos/ssut/payload-dumper-go/releases/latest | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz")) | .browser_download_url')
+          if [ -z "$PDG_URL" ]; then echo "❌ PDG URL not found"; exit 1; fi
+          curl -fsSL -o /tmp/pdg.tar.gz "$PDG_URL"
+          tar -xzf /tmp/pdg.tar.gz -C /tmp/
+          sudo mv /tmp/payload-dumper-go /usr/local/bin/
+          sudo chmod +x /usr/local/bin/payload-dumper-go
+
+          # Проверка
+          echo "🔍 Инструменты готовы:"
           command -v simg2img && echo "✅ simg2img"
-          command -v unpackimg.sh && echo "✅ AIK unpack"
-          command -v mkfs.erofs && echo "✅ erofs (apt)"
+          command -v lpunpack && echo "✅ lpunpack (python)"
+          command -v lpmake && echo "✅ lpmake (python)"
+          command -v payload-dumper-go && echo "✅ payload-dumper-go"
+          command -v mkfs.erofs && echo "✅ erofs-utils"
+          command -v dump.erofs && echo "✅ dump.erofs"
 
       - name: Download ROMs
         run: |
