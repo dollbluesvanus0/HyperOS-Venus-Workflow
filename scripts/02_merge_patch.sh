@@ -3,20 +3,14 @@ set -euo pipefail
 WORK="$1"; EXTRA_PROPS="$2"
 DONOR="$WORK/donor"; STOCK="$WORK/stock"
 
-echo "📂 Migrating files..."
-
+# === Твой код мержа (из первого сообщения) ===
 # 1. device_features & displayconfig
 rsync -a --delete "$STOCK/product/etc/device_features/" "$DONOR/product/etc/device_features/"
 rsync -a --delete "$STOCK/product/etc/displayconfig/" "$DONOR/product/etc/displayconfig/"
 
 # 2. MiuiBiometric
 biometric_src=$(find "$STOCK/product/app" -maxdepth 1 -type d -name "*[Bb]iometric*" | head -1)
-if [ -n "$biometric_src" ]; then
-  cp -r "$biometric_src" "$DONOR/product/app/"
-  echo "✅ Copied Biometric: $biometric_src"
-else
-  echo "⚠️  Biometric APK not found in stock"
-fi
+[ -n "$biometric_src" ] && cp -r "$biometric_src" "$DONOR/product/app/"
 
 # 3. pangu/system -> /product
 rsync -a --ignore-existing "$STOCK/product/pangu/system/" "$DONOR/product/"
@@ -34,20 +28,16 @@ if [ -f "$vendor_prop" ]; then
   grep -q "^ro.control_privapp_permissions=" "$vendor_prop" || echo "ro.control_privapp_permissions=disable" >> "$vendor_prop"
 fi
 
-# 6. Safe build.prop editing
+# 6. build.prop правка (безопасная)
 prop_file="$DONOR/product/etc/build.prop"
 python3 - <<PYEOF
 import re
-props = {
-    "persist.miui.density_v2": "560",
-    "ro.sf.lcd_density": "560"
-}
+props = {"persist.miui.density_v2": "560", "ro.sf.lcd_density": "560"}
 extra = """$EXTRA_PROPS"""
 for line in extra.strip().splitlines():
     if "=" in line:
         k, v = line.split("=", 1)
         props[k.strip()] = v.strip()
-
 with open("$prop_file", "r+") as f:
     content = f.read()
     for k, v in props.items():
@@ -56,13 +46,10 @@ with open("$prop_file", "r+") as f:
             content = pattern.sub(f"{k}={v}", content)
         else:
             content += f"\n{k}={v}"
-    f.seek(0)
-    f.write(content)
-    f.truncate()
+    f.seek(0); f.write(content); f.truncate()
 PYEOF
-echo "✅ build.prop updated"
 
-# 7. Bloat removal
+# 7. Удаление мусора (твой список)
 BLOAT=(
   "product/app/AnalyticsCore" "product/app/CarWith" "product/app/CatchLog"
   "product/app/MIUIGuardProvider" "product/app/MIUIsecurityinputmethod"
@@ -76,13 +63,9 @@ BLOAT=(
   "product/data-app/ThirdAppAssistant" "product/data-app/XMRemoteController"
   "product/priv-app/LinkToWindows" "product/priv-app/MIUIbrowser"
 )
-
 for b in "${BLOAT[@]}"; do
   target="$DONOR/$b"
   [ -e "$target" ] && rm -rf "$target"
 done
 
-# Удаляем оставшиеся упоминания из логов/оверлеев (если есть)
-find "$DONOR/product" -type f -name "*.xml" -o -name "*.prop" -o -name "*.rc" | xargs -I {} grep -l "voiceassist\|xiaomi.smarthome\|mipay" {} 2>/dev/null || true
-
-echo "🧹 Bloat removed. Ready for repack."
+echo "🧹 Мерж завершён."
