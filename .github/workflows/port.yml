@@ -74,7 +74,7 @@ jobs:
           echo "✅ Unpacked via RomTools"
           ls -la "$ROM_WORKDIR/projects/$PROJECT_NAME/"
 
-      - name: Merge & Patch (твой логический флоу)
+      - name: Merge & Patch (HyperOS Auto-Port Plugin style)
         run: |
           bash scripts/rom_merge.sh \
             "$ROM_WORKDIR/projects/$PROJECT_NAME" \
